@@ -4,7 +4,6 @@ Data Warehouse ของ **Sparkify** บริษัทสตรีมมิง
 
 Pipeline ทั้งหมดรันในเครื่องด้วย Docker: **Airflow** โหลดข้อมูลดิบ → **dbt** แปลงเป็น Star Schema และ KPI → **Metabase** แสดงผลเป็น dashboard
 
-> โปรเจกต์นี้ทำในรายวิชา Data Warehouse และต่อยอดรูปแบบจาก lab ในวิชา (Docker Compose + Airflow + dbt + Metabase)
 
 ---
 

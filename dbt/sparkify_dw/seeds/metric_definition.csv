@@ -1,0 +1,11 @@
+metric_key,metric_name,metric_label,description,formula,unit
+M001,songplay_count,Songplays,"จำนวนครั้งที่เล่นเพลง (event NextSong)",COUNT(songplay_id),count
+M002,listening_user_count,Listening Users,"จำนวนผู้ใช้ไม่ซ้ำที่เล่นเพลงอย่างน้อย 1 ครั้งในช่วงเวลา",COUNT_DISTINCT(user_id) WHERE NextSong,count
+M003,songplays_per_listening_user,Songplays per Listening User,"จำนวนเพลงเฉลี่ยต่อผู้ใช้ที่ฟังเพลง",M001/M002,songplays_per_user
+M004,paid_songplay_share,Paid Songplay Share,"สัดส่วนการเล่นเพลงที่เกิดขึ้นตอนผู้ใช้อยู่ในแผน paid",COUNT(songplay_id WHERE level='paid')/M001,ratio
+M005,songs_per_session,Songs per Session,"จำนวนเพลงเฉลี่ยต่อ session ที่มีการฟังเพลง (session = user_id + session_id)",M001/COUNT_DISTINCT(user_session_id WHERE NextSong),songplays_per_session
+M006,active_user_count,Active Users,"จำนวนผู้ใช้ไม่ซ้ำที่ login และมี event ใดๆ ในช่วงเวลา",COUNT_DISTINCT(user_id),count
+M007,upgrade_user_count,Upgraded Users,"จำนวนผู้ใช้ไม่ซ้ำที่กด Submit Upgrade (free -> paid)",COUNT_DISTINCT(user_id WHERE page='Submit Upgrade'),count
+M008,free_to_paid_conversion_rate,Free-to-Paid Conversion Rate,"สัดส่วนผู้ใช้ที่ Upgrade ต่อผู้ใช้ที่เคยอยู่แผน free ในช่วงเวลา",M007/COUNT_DISTINCT(user_id WHERE level='free'),ratio
+M009,churned_user_count,Churned Users,"จำนวนผู้ใช้ไม่ซ้ำที่ยกเลิกบริการ (Cancellation Confirmation)",COUNT_DISTINCT(user_id WHERE page='Cancellation Confirmation'),count
+M010,churn_rate,Churn Rate,"สัดส่วนผู้ใช้ที่ยกเลิกบริการต่อผู้ใช้ active ในช่วงเวลา",M009/M006,ratio

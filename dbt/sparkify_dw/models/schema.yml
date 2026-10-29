@@ -170,6 +170,53 @@ models:
       - name: length_seconds
         data_tests: [not_null]
 
+  - name: metric_platform_monthly
+    description: "KPI รายเดือนระดับแพลตฟอร์ม Long Format (เดือน x metric_key) ดูนิยามใน seed metric_definition"
+    columns:
+      - name: metric_month
+        data_tests: [not_null]
+      - name: is_partial_month
+        description: "true เมื่อข้อมูลไม่ครบทั้งเดือน (ธ.ค. 2018 มี 2 วัน) ไม่ควรเทียบกับเดือนเต็ม"
+        data_tests: [not_null]
+      - name: metric_key
+        data_tests:
+          - not_null
+          - relationships:
+              to: ref('metric_definition')
+              field: metric_key
+      - name: metric_value
+        description: "ratio เป็น null ได้เมื่อตัวหารเป็น 0"
+        data_tests:
+          - not_null:
+              config:
+                where: "unit = 'count'"
+
+  - name: metric_level_monthly
+    description: "KPI การฟังเพลงรายเดือนแยกตามแผน free/paid ณ ตอนที่เล่น"
+    columns:
+      - name: level
+        data_tests:
+          - accepted_values:
+              values: ['free', 'paid']
+      - name: metric_key
+        data_tests:
+          - not_null
+          - relationships:
+              to: ref('metric_definition')
+              field: metric_key
+
+  - name: rpt_top_artists_monthly
+    description: "Top 10 ศิลปินรายเดือน (rank เท่ากันได้เมื่อจำนวนเท่ากัน)"
+  - name: rpt_top_songs_monthly
+    description: "Top 10 เพลงรายเดือน นับตาม (ศิลปิน, ชื่อเพลง)"
+  - name: rpt_listening_by_weekday_hour
+    description: "จำนวนเพลงเฉลี่ยต่อวัน ตามวันในสัปดาห์ x ชั่วโมง (UTC)"
+  - name: rpt_user_churn_signals
+    description: "พฤติกรรมรายผู้ใช้ (อัตราต่อ 100 songplays) สำหรับเทียบกลุ่ม churned กับ retained"
+    columns:
+      - name: user_id
+        data_tests: [not_null, unique]
+
   - name: fct_user_event
     description: "Fact event ทุกประเภท 1 แถวต่อ 1 event"
     columns:
@@ -191,3 +238,14 @@ models:
           - relationships:
               to: ref('dim_user')
               field: user_key
+
+seeds:
+  - name: metric_definition
+    description: "Catalog กลางสำหรับรหัสและนิยาม KPI (แนวทางเดียวกับ Lab3 KPI Layer)"
+    columns:
+      - name: metric_key
+        data_tests: [not_null, unique]
+      - name: metric_name
+        data_tests: [not_null, unique]
+      - name: unit
+        data_tests: [not_null]

@@ -38,3 +38,7 @@ models:
 
 seeds:
   +schema: raw
+  sparkify_dw:
+    metric_definition:
+      +column_types:
+        metric_key: varchar(10)

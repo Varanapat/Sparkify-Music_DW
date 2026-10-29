@@ -184,6 +184,12 @@ def sparkify_etl():
             f"songs={songs_loaded:,}, range={first_event} -> {last_event}"
         )
 
+    # metric_definition (catalog KPI) เป็น seed ต้องโหลดก่อน metric models จะ join ได้
+    dbt_seed = BashOperator(
+        task_id="dbt_seed",
+        bash_command=f"dbt seed {DBT_ARGS}",
+    )
+
     dbt_run = BashOperator(
         task_id="dbt_run",
         bash_command=f"dbt run {DBT_ARGS}",
@@ -224,7 +230,7 @@ def sparkify_etl():
     expected >> [events_loaded, songs_loaded]
     raw_ok = validate_raw(expected, events_loaded, songs_loaded)
 
-    raw_ok >> dbt_run >> dbt_test >> validate_warehouse()
+    raw_ok >> dbt_seed >> dbt_run >> dbt_test >> validate_warehouse()
 
 
 sparkify_etl()

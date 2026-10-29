@@ -1,1 +1,14 @@
 raw_data/mini_event_log/mini_sparkify_event_data.json
+
+# เครื่องใครเครื่องมัน (AIRFLOW_UID ต่างกันแต่ละเครื่อง) — ดู .env.example
+.env
+
+# สร้างอัตโนมัติตอนรัน Airflow / dbt
+logs/
+config/airflow.cfg
+dbt/**/target/
+dbt/**/dbt_packages/
+dbt/**/logs/
+dbt_root/.user.yml
+__pycache__/
+.DS_Store

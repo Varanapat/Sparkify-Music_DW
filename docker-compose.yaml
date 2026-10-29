@@ -1,0 +1,293 @@
+# Sparkify Music DW
+# Airflow 3 (LocalExecutor) + PostgreSQL + pgAdmin + Metabase + dbt
+# ---------------------------------------------------------------
+# คัดลอกมาจาก lab-week01/docker-compose.yaml (เวอร์ชันประหยัดทรัพยากร) แล้วปรับเฉพาะ:
+# - name: sparkify  -> แยก project / volume / network ออกจาก stack ของ lab
+# - container_name ขึ้นต้นด้วย sp_ -> ไม่ชนกับ dw_* ของ lab (ชื่อ container ต้องไม่ซ้ำทั้งเครื่อง)
+# - พอร์ตฝั่งเครื่องเปลี่ยนจาก 2xxxx เป็น 3xxxx -> รันพร้อม lab ได้โดยพอร์ตไม่ชน
+# - เพิ่ม initdb/ -> สร้าง database sparkify_dw อัตโนมัติตอน volume ใหม่
+# - ไม่ mount postgresql.conf (ใน lab mount ไว้แต่ postgres ไม่ได้อ่าน เพราะไม่ได้ส่ง -c config_file)
+#
+# WARNING: This configuration is for local development. Do not use it in a production deployment.
+#
+# Supported variables (.env):
+#   AIRFLOW_UID, AIRFLOW_PROJ_DIR, _AIRFLOW_WWW_USER_USERNAME,
+#   _AIRFLOW_WWW_USER_PASSWORD, _PIP_ADDITIONAL_REQUIREMENTS
+---
+name: sparkify
+
+# จำกัดขนาด log ของ Docker (ไม่ให้ไฟล์ log โตไม่สิ้นสุด)
+x-logging:
+  &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-airflow-common:
+  &airflow-common
+  build:
+    context: .
+    dockerfile: dockerfile.airflow
+  environment:
+    &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://dw_user:dw_pass@postgres/airflow
+    AIRFLOW__CORE__TEST_CONNECTION: 'Enabled'
+    AIRFLOW__API_AUTH__JWT_SECRET: 'test-key'
+    AIRFLOW__CORE__FERNET_KEY: ''
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: 'http://airflow-apiserver:8080/execution/'
+    AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
+    _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-}
+    AIRFLOW_CONFIG: '/opt/airflow/config/airflow.cfg'
+
+    # ---------- Resource tuning ----------
+    AIRFLOW__API__WORKERS: '1'
+    AIRFLOW__CORE__PARALLELISM: '4'
+    AIRFLOW__DAG_PROCESSOR__PARSING_PROCESSES: '1'
+    AIRFLOW__DAG_PROCESSOR__MIN_FILE_PROCESS_INTERVAL: '120'
+    AIRFLOW__DAG_PROCESSOR__PRINT_STATS_INTERVAL: '300'
+    AIRFLOW__DATABASE__SQL_ALCHEMY_POOL_SIZE: '2'
+    AIRFLOW__DATABASE__SQL_ALCHEMY_MAX_OVERFLOW: '8'
+    MALLOC_ARENA_MAX: '2'
+  volumes:
+    - ${AIRFLOW_PROJ_DIR:-.}/dags:/opt/airflow/dags
+    - ${AIRFLOW_PROJ_DIR:-.}/logs:/opt/airflow/logs
+    - ${AIRFLOW_PROJ_DIR:-.}/config:/opt/airflow/config
+    - ${AIRFLOW_PROJ_DIR:-.}/plugins:/opt/airflow/plugins
+    - ${AIRFLOW_PROJ_DIR:-.}/raw_data:/home/raw_data
+    - ${AIRFLOW_PROJ_DIR:-.}/dbt:/opt/airflow/dbt
+    - ${AIRFLOW_PROJ_DIR:-.}/dbt_root:/opt/airflow/dbt_root
+  user: "${AIRFLOW_UID:-50000}:0"
+  logging: *default-logging
+  depends_on:
+    &airflow-common-depends-on
+    postgres:
+      condition: service_healthy
+  networks:
+    - sp_net
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: sp_postgres
+    environment:
+      POSTGRES_USER: dw_user
+      POSTGRES_PASSWORD: dw_pass
+      POSTGRES_DB: airflow
+    command:
+      - postgres
+      - -c
+      - shared_buffers=64MB
+      - -c
+      - effective_cache_size=256MB
+      - -c
+      - maintenance_work_mem=32MB
+      - -c
+      - work_mem=4MB
+      - -c
+      - autovacuum_max_workers=2
+      - -c
+      - max_parallel_workers_per_gather=1
+      - -c
+      - jit=off
+    ports:
+      - "35432:5432"
+    networks:
+      - sp_net
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      # สคริปต์ใน initdb/ รันครั้งเดียวตอน pg_data ยังว่าง (สร้าง database sparkify_dw)
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+      - ${AIRFLOW_PROJ_DIR:-.}/raw_data:/home/raw_data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "dw_user", "-d", "airflow"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+      start_interval: 2s
+    mem_limit: 512m
+    logging: *default-logging
+    restart: always
+
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: sp_pgadmin
+    restart: always
+    environment:
+      PGADMIN_DEFAULT_EMAIL: dw_user@mail.com
+      PGADMIN_DEFAULT_PASSWORD: dw_pass
+      PGADMIN_DISABLE_POSTFIX: 'true'
+      GUNICORN_THREADS: '4'
+      PGADMIN_CONFIG_UPGRADE_CHECK_ENABLED: 'False'
+    ports:
+      - "38880:80"
+    networks:
+      - sp_net
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
+    mem_limit: 384m
+    logging: *default-logging
+
+  metabase:
+    image: metabase/metabase
+    container_name: sp_metabase
+    depends_on:
+      - postgres
+    environment:
+      JAVA_OPTS: "-Xms256m -Xmx768m -XX:+UseSerialGC -Xss512k"
+      MALLOC_ARENA_MAX: '2'
+      MB_CHECK_FOR_UPDATES: 'false'
+      MB_ANON_TRACKING_ENABLED: 'false'
+      MB_JDBC_DATA_WAREHOUSE_MAX_CONNECTION_POOL_SIZE: '5'
+    ports:
+      - "33000:3000"
+    networks:
+      - sp_net
+    mem_limit: 1280m
+    logging: *default-logging
+    restart: always
+
+  dbt:
+    image: ghcr.io/dbt-labs/dbt-postgres
+    container_name: sp_dbt
+    depends_on:
+      - postgres
+    working_dir: /usr/app
+    init: true
+    entrypoint: ["sleep", "infinity"]
+    ports:
+      - "38088:8080"
+    networks:
+      - sp_net
+    volumes:
+      - ./dbt:/usr/app
+      - ./dbt_root:/root/.dbt
+    mem_limit: 1g
+    logging: *default-logging
+    restart: always
+
+  airflow-apiserver:
+    <<: *airflow-common
+    command: api-server
+    ports:
+      - "38080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/api/v2/monitor/health"]
+      interval: 60s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    mem_limit: 1g
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8974/health"]
+      interval: 60s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    # task (รวมถึงการโหลด JSON 128MB และ dbt) รันใน container นี้
+    mem_limit: 2g
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-dag-processor:
+    <<: *airflow-common
+    command: dag-processor
+    healthcheck:
+      test: ["CMD-SHELL", 'airflow jobs check --job-type DagProcessorJob --hostname "$${HOSTNAME}"']
+      interval: 120s
+      timeout: 30s
+      retries: 5
+      start_period: 60s
+    mem_limit: 1g
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-triggerer:
+    <<: *airflow-common
+    command: triggerer
+    healthcheck:
+      test: ["CMD-SHELL", 'airflow jobs check --job-type TriggererJob --hostname "$${HOSTNAME}"']
+      interval: 120s
+      timeout: 30s
+      retries: 5
+      start_period: 60s
+    mem_limit: 768m
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-init:
+    <<: *airflow-common
+    entrypoint: /bin/bash
+    # yamllint disable rule:line-length
+    command:
+      - -c
+      - |
+        if [[ -z "${AIRFLOW_UID}" ]]; then
+          echo
+          echo -e "\033[1;33mWARNING!!!: AIRFLOW_UID not set!\e[0m"
+          echo "See: https://airflow.apache.org/docs/apache-airflow/stable/howto/docker-compose/index.html#setting-the-right-airflow-user"
+          echo
+          export AIRFLOW_UID=$$(id -u)
+        fi
+        echo "Creating missing opt dirs if missing:"
+        mkdir -v -p /opt/airflow/{logs,dags,plugins,config}
+        echo "Airflow version:"
+        /entrypoint airflow version
+        echo "Running airflow config list to create default config file if missing."
+        /entrypoint airflow config list >/dev/null
+        echo "Change ownership of files in /opt/airflow to ${AIRFLOW_UID}:0"
+        chown -R "${AIRFLOW_UID}:0" /opt/airflow/
+        chown -v -R "${AIRFLOW_UID}:0" /opt/airflow/{logs,dags,plugins,config}
+    # yamllint enable rule:line-length
+    environment:
+      <<: *airflow-common-env
+      _AIRFLOW_DB_MIGRATE: 'true'
+      _AIRFLOW_WWW_USER_CREATE: 'true'
+      _AIRFLOW_WWW_USER_USERNAME: ${_AIRFLOW_WWW_USER_USERNAME:-airflow}
+      _AIRFLOW_WWW_USER_PASSWORD: ${_AIRFLOW_WWW_USER_PASSWORD:-airflow}
+      _PIP_ADDITIONAL_REQUIREMENTS: ''
+    user: "0:0"
+
+  airflow-cli:
+    <<: *airflow-common
+    profiles:
+      - debug
+    environment:
+      <<: *airflow-common-env
+      CONNECTION_CHECK_MAX_COUNT: "0"
+    command:
+      - bash
+      - -c
+      - airflow
+    depends_on:
+      <<: *airflow-common-depends-on
+
+networks:
+  sp_net:
+
+volumes:
+  pg_data:
+  pgadmin-data:

@@ -3,9 +3,11 @@ from pathlib import Path
 import psycopg2
 import pendulum
 from airflow.sdk import dag, task
+from airflow.providers.standard.operators.bash import BashOperator
 
 
 RAW_DIR = Path("/home/raw_data")
+DBT_ARGS = "--project-dir /opt/airflow/dbt/sparkify_dw --profiles-dir /opt/airflow/dbt_root"
 EVENTS_PATH = RAW_DIR / "mini_event_log" / "mini_sparkify_event_data.json"
 SONG_DIR = RAW_DIR / "postgres_sample" / "song_data"
 
@@ -182,11 +184,47 @@ def sparkify_etl():
             f"songs={songs_loaded:,}, range={first_event} -> {last_event}"
         )
 
+    dbt_run = BashOperator(
+        task_id="dbt_run",
+        bash_command=f"dbt run {DBT_ARGS}",
+    )
+
+    dbt_test = BashOperator(
+        task_id="dbt_test",
+        bash_command=f"dbt test {DBT_ARGS}",
+    )
+
+    @task
+    def validate_warehouse():
+        connection = get_connection()
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("""
+                    select
+                        (select count(*) from dbt_marts.fct_songplay)   as songplays,
+                        (select count(*) from dbt_marts.fct_user_event) as events,
+                        (select count(*) from dbt_marts.dim_user where user_id is not null) as user_versions,
+                        (select count(distinct user_id) from dbt_marts.dim_user)            as users,
+                        (select count(*) from dbt_marts.dim_song)       as songs,
+                        (select count(*) from dbt_marts.dim_artist)     as artists
+                """)
+                songplays, events, user_versions, users, songs, artists = cursor.fetchone()
+        finally:
+            connection.close()
+
+        print(
+            "Warehouse summary: "
+            f"songplays={songplays:,}, events={events:,}, users={users:,}, "
+            f"user_versions={user_versions:,}, songs={songs:,}, artists={artists:,}"
+        )
+
     expected = check_source_files()
     events_loaded = load_raw_events()
     songs_loaded = load_raw_songs()
     expected >> [events_loaded, songs_loaded]
-    validate_raw(expected, events_loaded, songs_loaded)
+    raw_ok = validate_raw(expected, events_loaded, songs_loaded)
+
+    raw_ok >> dbt_run >> dbt_test >> validate_warehouse()
 
 
 sparkify_etl()

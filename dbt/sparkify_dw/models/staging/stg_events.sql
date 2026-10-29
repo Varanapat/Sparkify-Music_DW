@@ -27,7 +27,8 @@ select
     nullif(trim(p->>'userAgent'), '')                         as user_agent,
     to_timestamp((p->>'registration')::bigint / 1000.0) at time zone 'UTC' as registered_at,
     -- 129 แถวมีช่องว่างหัว/ท้ายชื่อ ตัดออกเพื่อให้ key ของเพลง/ศิลปินตรงกัน
-    nullif(trim(p->>'artist'), '')                            as artist_name,
-    nullif(trim(p->>'song'), '')                              as song_title,
+    -- ชื่อที่มีอักขระนอก ASCII ทุกชื่อในไฟล์นี้ encoding เพี้ยน 2 รอบ เช่น 'BjÃÂ¶rk' -> 'Björk'
+    nullif(trim({{ fix_mojibake("p->>'artist'") }}), '')       as artist_name,
+    nullif(trim({{ fix_mojibake("p->>'song'") }}), '')         as song_title,
     (p->>'length')::numeric(10, 5)                            as length_seconds
 from source

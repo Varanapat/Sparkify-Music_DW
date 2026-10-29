@@ -14,6 +14,10 @@ clean-targets:
   - "target"
   - "dbt_packages"
 
+# สร้างฟังก์ชันแก้ชื่อที่ encoding เพี้ยนก่อน model ใดๆ จะใช้ (ดู macros/fix_mojibake.sql)
+on-run-start:
+  - "{{ create_fix_mojibake_function() }}"
+
 models:
   sparkify_dw:                   # ต้องตรงกับ name ของ project
     staging:

@@ -1,0 +1,75 @@
+version: 2
+
+models:
+  - name: stg_events
+    description: "Event log ที่ปรับชนิดข้อมูลแล้ว 1 แถวต่อ 1 event (ทุก page) เวลาเป็น UTC"
+    columns:
+      - name: event_id
+        description: "ลำดับบรรทัดในไฟล์ต้นทาง ใช้เป็น key ของ event"
+        data_tests: [not_null, unique]
+      - name: event_ts
+        description: "เวลาที่เกิด event (UTC)"
+        data_tests: [not_null]
+      - name: user_id
+        description: "รหัสผู้ใช้ เป็น null เมื่อ auth = Guest หรือ Logged Out"
+        data_tests:
+          - not_null:
+              config:
+                where: "auth in ('Logged In', 'Cancelled')"
+      - name: session_id
+        description: "รหัส session ไม่ unique ข้ามผู้ใช้ ต้องใช้คู่กับ user_id"
+        data_tests: [not_null]
+      - name: page
+        description: "ประเภท event เช่น NextSong, Home, Thumbs Up"
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: ['NextSong', 'Home', 'Thumbs Up', 'Add to Playlist', 'Add Friend',
+                       'Roll Advert', 'Login', 'Logout', 'Thumbs Down', 'Downgrade', 'Help',
+                       'Settings', 'About', 'Upgrade', 'Save Settings', 'Error',
+                       'Submit Upgrade', 'Submit Downgrade', 'Cancel',
+                       'Cancellation Confirmation', 'Register', 'Submit Registration']
+      - name: auth
+        data_tests:
+          - accepted_values:
+              values: ['Logged In', 'Logged Out', 'Guest', 'Cancelled']
+      - name: level
+        description: "แผนของผู้ใช้ ณ เวลาที่เกิด event"
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: ['free', 'paid']
+      - name: http_status
+        data_tests:
+          - accepted_values:
+              values: [200, 307, 404]
+              quote: false
+      - name: artist_name
+        data_tests:
+          - not_null:
+              config:
+                where: "is_songplay"
+      - name: song_title
+        data_tests:
+          - not_null:
+              config:
+                where: "is_songplay"
+      - name: length_seconds
+        data_tests:
+          - not_null:
+              config:
+                where: "is_songplay"
+
+  - name: stg_songs
+    description: "Song metadata 1 แถวต่อ 1 เพลง"
+    columns:
+      - name: song_id
+        data_tests: [not_null, unique]
+      - name: song_title
+        data_tests: [not_null]
+      - name: artist_id
+        data_tests: [not_null]
+      - name: artist_name
+        data_tests: [not_null]
+      - name: duration_seconds
+        data_tests: [not_null]
